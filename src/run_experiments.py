@@ -34,7 +34,7 @@ def run(
     :return: Tuple of each (dataframe, filename) for the full results and summary.
     """
     assert (1 <= experiment_type <= 6) and isinstance(experiment_type, int)
-    if n_trials is not None:
+    if n_trials != 300:
         print(f"Overriding with {n_trials=}.")
     else:
         n_trials = 300
