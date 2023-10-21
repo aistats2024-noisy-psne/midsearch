@@ -39,7 +39,7 @@ def _algorithm_latex_name(alg_name: str) -> str:
         raise ValueError(f"Unknown algorithm name: {alg_name}")
 
 
-def _latex_problem_name(problem_name: str, delta_only: bool):
+def _latex_problem_name(problem_name: str, delta_only: bool = False):
     """Return LaTeX string for problem name."""
     pattern = "\[(.+),(.+)\]"
     if delta_only:
@@ -76,13 +76,22 @@ def plot_h1_sweep(df: pd.DataFrame, filename: str, exp_type: int = 1):
         "xtick.labelsize": 18.0,
         "ytick.labelsize": 18.0,
         "axes.titlesize": 20.0,
-        "legend.fontsize": 20.0,
+        "legend.fontsize": 18.0,
+        "xtick.bottom": True,
+        "xtick.color": ".8",
     }
-    # TODO
-    assert 1 <= exp_type <= 3, f"Appendix experiments not implemented yet."
-    plot_type = exp_type
+    # Plotting parameters based on exp_type
+    assert 1 <= exp_type <= 6
+    one_col_plot = exp_type in [1, 3, 4]
+    plot_small_h1 = exp_type != 1
+    if exp_type in [3, 4]:
+        col_param = "dim"
+        ls_param = "problem"
+    else:
+        col_param = "problem"
+        ls_param = "dim"
 
-    if plot_type in [1, 3]:
+    if one_col_plot:
         sns.set_theme(
             **base_theme_kwargs,
             font_scale=3,
@@ -90,31 +99,29 @@ def plot_h1_sweep(df: pd.DataFrame, filename: str, exp_type: int = 1):
                 **base_rcparams,
                 "lines.linewidth": 3,
                 "legend.fontsize": 16.5,
-                "xtick.bottom": True,
-                "xtick.color": ".8",
             },
         )
-    elif plot_type == 2:
+    else:
         sns.set_theme(
             **base_theme_kwargs,
             font_scale=4,
             rc={
                 **base_rcparams,
+                "lines.linewidth": 2.25,
             },
         )
-    else:
-        raise ValueError(f"Unknown plot type: {plot_type}")
 
     # Round x values to make plots nice (annoying Jax stuff)
     xvals = df["checkpoint"] / df["h1"]
-    if plot_type == 1:
-        df["samples/H1"] = np.round(xvals / 5) * 5
-    else:
+    if plot_small_h1:
         df["samples/H1"] = np.round(xvals)
+    else:
+        df["samples/H1"] = np.round(xvals / 5) * 5
     df_ = df.rename(columns={"name": "algorithm"})
     df_["algorithm"] = df_["algorithm"].map(_algorithm_latex_name)
+    n_algorithms = df_.algorithm.nunique()
     df_["problem"] = df_["problem"].map(
-        lambda x: _latex_problem_name(x, delta_only=plot_type == 3)
+        lambda x: _latex_problem_name(x, delta_only=col_param == "dim")
     )
 
     # Add point at (0,0) for each line
@@ -129,13 +136,13 @@ def plot_h1_sweep(df: pd.DataFrame, filename: str, exp_type: int = 1):
 
     g = sns.FacetGrid(
         df_,
-        col="problem" if plot_type in [1, 2] else "dim",
-        col_wrap=2 if plot_type == 2 else 1,
+        col=col_param,
+        col_wrap=1 if one_col_plot else 2,
         height=4.75,
         sharex=False,
-        aspect=1.8 if plot_type in [1, 3] else 1.6,
+        aspect=1.8 if one_col_plot else 1.6,
         despine=True,
-        legend_out=plot_type in [1, 3],
+        legend_out=one_col_plot,
         ylim=[-0.1, 1.1],
         xlim=[-1, 51],
     )
@@ -144,32 +151,51 @@ def plot_h1_sweep(df: pd.DataFrame, filename: str, exp_type: int = 1):
         x="samples/H1",
         y="correct",
         hue="algorithm",
-        style="dim" if plot_type in [1, 2] else "problem",
-        palette=sns.color_palette("colorblind")[: df_.algorithm.nunique()],
+        style=ls_param,
+        palette=sns.color_palette("colorblind")[:n_algorithms],
+        errorbar=_prop_ci,
         ms=10,
         marker="o",
     )
     g.set(xticks=range(0, 55, 5))
-    if plot_type == 3:
-        # Add minor ticks for H1=1-5
-        for ax in g.axes.flatten():
-            ax.set_xticks(range(1, 5), minor=True)
     g.set_xticklabels(color=".15")
+    if plot_small_h1:
+        for ax in g.axes[:]:
+            ax.set_xticks(range(1, 5), minor=True)
 
-    if plot_type in [1, 2]:
+    if col_param == "problem":
         title_template = "{col_name}"
     else:
-        title_template = "$d$={col_name}, $\\beta=0.1$"
+        title_template = "$d$={col_name}, $\\beta$=0.1"
     g.set_titles(template=title_template, pad=2)
 
-    if plot_type in [1, 3]:
+    if one_col_plot:
         g.add_legend()
+        if ls_param == "dim":
+            g.legend.get_texts()[n_algorithms + 1].set_text("$d$")
     else:
-        leg = g.axes[-1].legend(loc="lower right", framealpha=1, ncols=3)
-        g._legend = leg
+        ax = g.axes[0]
+        handles, labels = ax.get_legend_handles_labels()
+        bbox_to_anchor = (0.775, 0.55) if exp_type in [5, 6] else (0.75, 0.8)
+        legend_dim = ax.legend(
+            handles[n_algorithms + 1 :],
+            labels[n_algorithms + 1 :],
+            framealpha=1,
+            loc="upper left",
+            bbox_to_anchor=bbox_to_anchor,
+        )
+        legend_dim.get_texts()[0].set_text("$d$")
 
-    if plot_type in [1, 2]:
-        g.legend.get_texts()[df_.algorithm.nunique() + 1].set_text("$d$")
+        legend_alg = ax.legend(
+            handles[: n_algorithms + 1],
+            labels[: n_algorithms + 1],
+            framealpha=1,
+            loc="upper right",
+            bbox_to_anchor=bbox_to_anchor,
+        )
+        ax.add_artist(legend_dim)
+        g._legend = legend_alg
+
     g.set_xlabels("samples/$H_1$")
     g.set_ylabels(
         "$P$(correct)",

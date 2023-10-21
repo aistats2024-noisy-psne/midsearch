@@ -141,10 +141,10 @@ def run(
 if __name__ == "__main__":
     for experiment_type_ in [
         1,
-        # 2,
-        # 3,
-        # 4,
-        # 5,
-        # 6,
+        2,
+        3,
+        4,
+        5,
+        6,
     ]:
-        run(experiment_type_, n_trials=10)
+        run(experiment_type_)
